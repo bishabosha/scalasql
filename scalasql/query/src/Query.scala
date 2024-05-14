@@ -15,6 +15,9 @@ trait Query[R] extends Renderable {
   protected def queryIsExecuteUpdate: Boolean = false
 
   protected def queryConstruct(args: Queryable.ResultSetIterator): R
+
+  /** renderSql is protected, so not visible from QueryQueryable */
+  private[Query] def renderSqlAccess(ctx: Context): SqlStr = renderSql(ctx)
 }
 
 object Query {
@@ -71,7 +74,7 @@ object Query {
     override def walkExprs(q: Q) = q.queryWalkExprs()
     override def isSingleRow(q: Q) = q.queryIsSingleRow
 
-    def renderSql(q: Q, ctx: Context): SqlStr = q.renderSql(ctx)
+    def renderSql(q: Q, ctx: Context): SqlStr = q.renderSqlAccess(ctx)
 
     override def construct(q: Q, args: Queryable.ResultSetIterator): R = q.queryConstruct(args)
   }

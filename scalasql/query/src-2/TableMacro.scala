@@ -22,7 +22,7 @@ object TableMacros {
       val name = param.name
 
       if (isTypeParamType(param)) {
-        q"implicitly[scalasql.Table.ImplicitMetadata[${param.info.typeSymbol}]].value.vExpr($tableRef, dialect)"
+        q"implicitly[scalasql.query.Table.ImplicitMetadata[${param.info.typeSymbol}]].value.vExpr($tableRef, dialect)"
       } else {
         q"""
           new _root_.scalasql.Column[${param.info.typeArgs.head}](

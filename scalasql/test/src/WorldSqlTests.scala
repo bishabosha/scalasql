@@ -15,6 +15,7 @@ object WorldSqlTests extends TestSuite {
   // ### Importing Your Database Dialect
   // To begin using ScalaSql, you need the following imports:
   import scalasql._
+  // import scalasql.H2Dialect.{given, *}
   import scalasql.H2Dialect._
   // This readme will use the H2 database for simplicity, but you can change the `Dialect`
   // above to other databases as necessary. ScalaSql supports H2, Sqlite, HsqlExpr,

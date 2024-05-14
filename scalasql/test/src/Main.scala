@@ -1,8 +1,10 @@
 package scalasql
 
 import java.sql.DriverManager
+// import scalasql.H2Dialect.{given, *}
 import scalasql.H2Dialect._
-object Main {
+
+object Main2 {
 
   case class Example[T[_]](bytes: T[geny.Bytes])
 

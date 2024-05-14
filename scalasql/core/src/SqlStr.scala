@@ -50,7 +50,7 @@ object SqlStr {
           case (part, null) => part
           case (part, param) =>
             val jdbcTypeString = param.mappedType.castTypeString
-            if (castParams) part + s"CAST(? AS $jdbcTypeString)" else part + "?"
+            if (castParams) s"${part}CAST(? AS $jdbcTypeString)" else s"${part}?"
         }
         .mkString
 

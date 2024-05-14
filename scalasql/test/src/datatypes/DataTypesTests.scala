@@ -1,6 +1,7 @@
 package scalasql.datatypes
 
 import scalasql._
+// import scalasql.{given, *}
 import sourcecode.Text
 import utest._
 import utils.ScalaSqlSuite

@@ -2,6 +2,7 @@ package scalasql.datatypes
 
 import scalasql.core.Expr
 import scalasql._
+// import scalasql.{given, *}
 import utest._
 import utils.ScalaSqlSuite
 import sourcecode.Text

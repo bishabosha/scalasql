@@ -73,11 +73,11 @@ class SimpleSelect[Q, R](
         wheres: Seq[Expr[Boolean]]
     ): Select[Q2, R2] = thing match {
 
-      case other: FlatJoin.MapResult[Q, Q2, R, R2] =>
+      case other: FlatJoin.MapResult[Q, Q2, R, R2] @unchecked =>
         val otherJoin = Join(other.prefix, Seq(Join.From(other.from, other.on)))
         joinCopy0(other.f, joinOns ++ Seq(otherJoin), other.where ++ wheres)
 
-      case other: FlatJoin.FlatMapResult[Q, Q2, R, R2] =>
+      case other: FlatJoin.FlatMapResult[Q, Q2, R, R2] @unchecked =>
         val otherJoin = Join(other.prefix, Seq(Join.From(other.from, other.on)))
         rec(other.f, joinOns ++ Seq(otherJoin), wheres ++ other.where)
     }
@@ -243,7 +243,7 @@ object SimpleSelect {
       extends SubqueryRef.Wrapped.Renderer {
     lazy val flattenedExpr = query.qr.walkLabelsAndExprs(query.expr)
     lazy val froms = query.from ++ query.joins.flatMap(_.from.map(_.from))
-    implicit lazy val context = Context.compute(prevContext, froms, None)
+    implicit lazy val context: Context = Context.compute(prevContext, froms, None)
 
     lazy val joinOns =
       query.joins.map(_.from.map(_.on.map(t => SqlStr.flatten(Renderable.renderSql(t)))))

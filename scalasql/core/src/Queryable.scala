@@ -116,14 +116,14 @@ object Queryable {
         construct0: ResultSetIterator => R,
         deconstruct0: R => Q
     ) extends Queryable.Row[Q, R] {
-      def walkExprs(q: Q) = {
+      def walkExprs(q: Q): Seq[Expr[_]] = {
         walkExprs0(q).iterator.zipWithIndex
           .map { case (v, i) => (i.toString, v) }
           .flatMap { case (prefix, vs0) => vs0 }
           .toIndexedSeq
       }
 
-      def walkLabels() = {
+      def walkLabels(): Seq[List[String]] = {
         walkLabels0.iterator.zipWithIndex
           .map { case (v, i) => (i.toString, v) }
           .flatMap { case (prefix, vs0) => vs0.map { k => prefix +: k } }
