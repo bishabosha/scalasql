@@ -20,6 +20,8 @@ import java.util.Date
 import java.text.SimpleDateFormat
 import java.util.UUID
 
+import scalasql.namedtuples.SimpleTable.Ops.given
+
 case class OptCols(myInt: Option[Int], myInt2: Option[Int])
 
 object OptCols extends SimpleTable[OptCols]

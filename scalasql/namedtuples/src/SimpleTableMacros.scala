@@ -20,7 +20,7 @@ import scala.annotation.tailrec
 object SimpleTableMacros {
 
   trait Mask[C]:
-    type Result[T[_]] <: SimpleTable.Record[C, ?] | C
+    type Result[T[_]] <: AnyNamedTuple | C
 
   object Mask:
     import scala.quoted.{Expr as QExpr, *}
@@ -29,6 +29,12 @@ object SimpleTableMacros {
 
     transparent inline given [C]: Mask[C] = ${ compute[C, NamedTuple.From[C]] }
 
+    def baseErr(using Quotes): QExpr[Nothing] = '{
+      compiletime.error(
+        "Cannot find a Mask instance for the given type. Please ensure that the type is a case class or a named tuple."
+      )
+    }
+
     def compute[C: Type, A <: AnyNamedTuple: Type](using Quotes): QExpr[Mask[C]] =
       computeRoot[C, NamedTuple.Names[A], NamedTuple.DropNames[A]]
 
@@ -36,7 +42,7 @@ object SimpleTableMacros {
         using Quotes
     ): QExpr[Mask[C]] =
       compute1[C, N, V](Nil) match
-        case Some('[type res[T[_]] <: SimpleTable.Record[C, ?]; res]) =>
+        case Some('[type res[T[_]] <: AnyNamedTuple; res]) =>
           '{
             Impl.asInstanceOf[
               Mask[
@@ -48,12 +54,7 @@ object SimpleTableMacros {
               }
             ]
           }
-        case _ =>
-          '{
-            compiletime.error(
-              "Cannot find a Mask instance for the given type. Please ensure that the type is a case class or a named tuple."
-            )
-          }
+        case _ => baseErr
 
     @tailrec
     def compute1[C: Type, N <: Tuple: Type, V <: Tuple: Type](acc: List[Type[?]])(
@@ -81,7 +82,9 @@ object SimpleTableMacros {
             )
           tpes match
             case '[type tpes[T[_]] <: Tuple; `tpes`] =>
-              Some(Type.of[[T[_]] =>> SimpleTable.Record[C, NamedTuple.NamedTuple[N, tpes[T]]]])
+              Some(Type.of[[T[_]] =>> NamedTuple.NamedTuple[N, tpes[T]]])
+        case _ =>
+          None
 
     def computeRec[V: Type](using Quotes): Option[Type[?]] =
       type vNT = NamedTuple.From[V]
@@ -185,9 +188,9 @@ object SimpleTableMacros {
 
   def walkAllExprs(
       queryable: Table.Metadata.QueryableProxy
-  )(e: SimpleTable.Record[?, ?]): IndexedSeq[Expr[?]] = {
+  )(e: AnyNamedTuple): IndexedSeq[Expr[?]] = {
     var i = 0
-    val fields = e.recordIterator
+    val fields = e.asInstanceOf[Tuple].productIterator
     val buf = IndexedSeq.newBuilder[Seq[Expr[?]]]
     while fields.hasNext do
       type T
@@ -215,7 +218,7 @@ object SimpleTableMacros {
 
   def deconstruct(
       queryable: Table.Metadata.QueryableProxy
-  )(c: Product): SimpleTable.Record[?, ?] = {
+  )(c: Product): AnyNamedTuple = {
     var i = 0
     val buf = IArray.newBuilder[AnyRef]
     val fields = c.productIterator
@@ -226,7 +229,7 @@ object SimpleTableMacros {
       val row = queryable[Field, T](i)
       buf += row.deconstruct(field).asInstanceOf[AnyRef]
       i += 1
-    SimpleTable.Record.fromIArray(buf.result())
+    Tuple.fromIArray(buf.result()).asInstanceOf[AnyNamedTuple]
   }
 
 }
@@ -290,7 +293,7 @@ trait SimpleTableMacros {
       // TODO: we should not cache the columns here because this can be called multiple times,
       //       and each time the captured tableRef should be treated as a fresh value.
       val columns = SimpleTableMacros.computeColumns[Columns](mappers, tableRef)
-      SimpleTable.Record.fromIArray(columns).asInstanceOf[Impl[Column]]
+      Tuple.fromIArray(columns).asInstanceOf[Impl[Column]]
 
     val metadata0 = Table.Metadata[Impl](queryables, walkLabels0, queryable, vExpr0)
 
