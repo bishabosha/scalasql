@@ -15,7 +15,7 @@ import scalasql.query.Table
 import scalasql.query.Table.ImplicitMetadata
 import sourcecode.Name
 
-import scala.NamedTuple.AnyNamedTuple
+import scala.NamedTuple.{NamedTuple, AnyNamedTuple}
 import scala.language.implicitConversions
 
 class SimpleTable[C]()(
@@ -55,6 +55,35 @@ class SimpleTable[C]()(
 
 object SimpleTable {
 
+  trait LowPrioOps { self: Ops.type =>
+    given NTTableQuery: [N <: Tuple, V <: Tuple, Q <: AnyNamedTuple]
+      => Tuple.IsMappedBy[Expr][V]
+      => Q <:< NamedTuple[N, Tuple.InverseMap[V, Expr]]
+      => Queryable.Row[NamedTuple[N, V], Q] =
+      ???
+  }
+
+  object Ops extends LowPrioOps {
+
+    given selectDelegate: [T <: AnyNamedTuple, C]
+      => (table: WrappedMetadata[C])
+      => (delegate: Queryable.Row[NamedTuple.Map[T, Expr], C])
+      => Queryable.Row[Query[Seq[T]], Seq[C]] =
+      ???
+
+    given Syntax: AnyRef {
+      extension [T <: AnyNamedTuple](t: T)
+        def updates(fs: ((u: TupleUpdater[T]) => u.Patch)*): T =
+          val u = tupleUpdater[T]
+          val arr = t.asInstanceOf[Tuple].toArray
+          fs.foreach: f =>
+            val patch = f(u)
+            val idx = patch.idx
+            arr(idx) = patch.f(arr(idx))
+          Tuple.fromIArray(IArray.unsafeFromArray(arr)).asInstanceOf[T]
+    }
+  }
+
   trait LowPri[C] { this: SimpleTable[C] =>
     implicit def containerQr2(
         implicit dialect: DialectTypeMappers,
@@ -78,26 +107,26 @@ object SimpleTable {
       override protected[scalasql] def escape: Boolean = t.escape
     })
 
-  final class Record[C, Mask <: AnyNamedTuple](data: IArray[AnyRef]) extends Selectable:
-    type Fields = Mask
-    def recordIterator: Iterator[Any] = data.iterator.asInstanceOf[Iterator[Any]]
-    def apply(i: Int): AnyRef = data(i)
-    def updates(fs: ((u: RecordUpdater[C, Mask]) => u.Patch)*): Record[C, Mask] =
-      val u = recordUpdater[C, Mask]
-      val arr = IArray.genericWrapArray(data).toArray
-      fs.foreach: f =>
-        val patch = f(u)
-        val idx = patch.idx
-        arr(idx) = patch.f(arr(idx))
-      Record(IArray.unsafeFromArray(arr))
+  // final class Record[C, Mask <: AnyNamedTuple](data: IArray[AnyRef]) extends Selectable:
+  //   type Fields = Mask
+  //   def recordIterator: Iterator[Any] = data.iterator.asInstanceOf[Iterator[Any]]
+  //   def apply(i: Int): AnyRef = data(i)
+  //   def updates(fs: ((u: RecordUpdater[C, Mask]) => u.Patch)*): Record[C, Mask] =
+  //     val u = recordUpdater[C, Mask]
+  //     val arr = IArray.genericWrapArray(data).toArray
+  //     fs.foreach: f =>
+  //       val patch = f(u)
+  //       val idx = patch.idx
+  //       arr(idx) = patch.f(arr(idx))
+  //     Record(IArray.unsafeFromArray(arr))
 
-    inline def selectDynamic(name: String): AnyRef =
-      apply(compiletime.constValue[Record.IndexOf[name.type, Record.Names[C], 0]])
+  //   inline def selectDynamic(name: String): AnyRef =
+  //     apply(compiletime.constValue[Record.IndexOf[name.type, Record.Names[C], 0]])
 
-  private object RecordUpdaterImpl extends RecordUpdater[Any, AnyNamedTuple]
-  def recordUpdater[C, Mask <: AnyNamedTuple]: RecordUpdater[C, Mask] =
-    RecordUpdaterImpl.asInstanceOf[RecordUpdater[C, Mask]]
-  sealed trait RecordUpdater[C, Mask <: AnyNamedTuple] extends Selectable:
+  private object TupleUpdaterImpl extends TupleUpdater[AnyNamedTuple]
+  def tupleUpdater[Mask <: AnyNamedTuple]: TupleUpdater[Mask] =
+    TupleUpdaterImpl.asInstanceOf[TupleUpdater[Mask]]
+  sealed trait TupleUpdater[Mask <: AnyNamedTuple] extends Selectable:
     final case class Patch(idx: Int, f: AnyRef => AnyRef)
     type Fields = NamedTuple.Map[
       Mask,
@@ -106,9 +135,9 @@ object SimpleTable {
     def apply(i: Int): (AnyRef => AnyRef) => Patch =
       f => Patch(i, f)
     inline def selectDynamic(name: String): (AnyRef => AnyRef) => Patch =
-      apply(compiletime.constValue[Record.IndexOf[name.type, Record.Names[C], 0]])
+      apply(compiletime.constValue[TupleUtils.IndexOf[name.type, NamedTuple.Names[Mask], 0]])
 
-  object Record:
+  object TupleUtils:
     import scala.compiletime.ops.int.*
     type Names[C] = NamedTuple.Names[NamedTuple.From[C]]
     type IndexOf[N, T <: Tuple, Acc <: Int] <: Int = T match {
@@ -116,8 +145,14 @@ object SimpleTable {
       case N *: _ => Acc
       case _ *: t => IndexOf[N, t, S[Acc]]
     }
-    def fromIArray(data: IArray[AnyRef]): Record[Any, AnyNamedTuple] =
-      Record(data)
+    type InverseMap[T <: AnyNamedTuple, F[_]] = NamedTuple.Map[
+      T,
+      [X] =>> X match { case F[t] => t }
+    ]
+
+  // object Record:
+  //   def fromIArray(data: IArray[AnyRef]): Record[Any, AnyNamedTuple] =
+  //     Record(data)
 
   object Internal {
     case object Tombstone
