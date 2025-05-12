@@ -39,37 +39,38 @@ class SimpleTable[C]()(
   given simpleTableImplicitMetadata: SimpleTable.WrappedMetadata[C] =
     SimpleTable.WrappedMetadata(metadata)
 
-  implicit def containerQr(
+  // implicit def containerQr(
+  //     implicit dialect: DialectTypeMappers,
+  //     f: SimpleTableMacros.Mask[C]
+  // ): Queryable.Row[f.Convert[Expr], C] = metadata
+  //   .rowExpr(dialect)
+  //   .asInstanceOf[Queryable.Row[f.Convert[Expr], C]]
+
+  implicit def containerQrBase(
       implicit dialect: DialectTypeMappers,
       f: SimpleTableMacros.Mask[C]
-  ): Queryable.Row[f.Result[Expr], C] =
-    val tableMetadata = metadata.metadata0
-    tableMetadata
-      .queryable(
-        tableMetadata.walkLabels0,
-        dialect,
-        new Table.Metadata.QueryableProxy(tableMetadata.queryables(dialect, _))
-      )
-      .asInstanceOf[Queryable.Row[f.Result[Expr], C]]
+  ): Queryable.Row[f.Base[Expr], f.Base[Sc]] = metadata
+    .rowExprBase(dialect)
+    .asInstanceOf[Queryable.Row[f.Base[Expr], f.Base[Sc]]]
 }
 
 object SimpleTable {
 
   trait LowPrioOps { self: Ops.type =>
-    given NTTableQuery: [N <: Tuple, V <: Tuple, Q <: AnyNamedTuple]
-      => Tuple.IsMappedBy[Expr][V]
-      => Q <:< NamedTuple[N, Tuple.InverseMap[V, Expr]]
-      => Queryable.Row[NamedTuple[N, V], Q] =
-      ???
+    // given NTTableQuery: [N <: Tuple, V <: Tuple, Q <: AnyNamedTuple]
+    //   => Tuple.IsMappedBy[Expr][V]
+    //   => Q <:< NamedTuple[N, Tuple.InverseMap[V, Expr]]
+    //   => Queryable.Row[NamedTuple[N, V], Q] =
+    //   ???
   }
 
   object Ops extends LowPrioOps {
 
-    given selectDelegate: [T <: AnyNamedTuple, C]
-      => (table: WrappedMetadata[C])
-      => (delegate: Queryable.Row[NamedTuple.Map[T, Expr], C])
-      => Queryable.Row[Query[Seq[T]], Seq[C]] =
-      ???
+    // given selectDelegate: [T <: AnyNamedTuple, C]
+    //   => (table: WrappedMetadata[C])
+    //   => (delegate: Queryable.Row[NamedTuple.Map[T, Expr], C])
+    //   => Queryable.Row[Query[Seq[T]], Seq[C]] =
+    //   ???
 
     given Syntax: AnyRef {
       extension [T <: AnyNamedTuple](t: T)
@@ -85,19 +86,24 @@ object SimpleTable {
   }
 
   trait LowPri[C] { this: SimpleTable[C] =>
-    implicit def containerQr2(
+    // implicit def containerQr2(
+    //     implicit dialect: DialectTypeMappers,
+    //     f: SimpleTableMacros.Mask[C]
+    // ): Queryable.Row[f.Convert[Column], C] =
+    //   containerQr.asInstanceOf[Queryable.Row[f.Convert[Column], C]]
+    implicit def containerQr2Base(
         implicit dialect: DialectTypeMappers,
         f: SimpleTableMacros.Mask[C]
-    ): Queryable.Row[f.Result[Column], C] =
-      containerQr.asInstanceOf[Queryable.Row[f.Result[Column], C]]
+    ): Queryable.Row[f.Base[Column], f.Base[Sc]] =
+      containerQrBase.asInstanceOf[Queryable.Row[f.Base[Column], f.Base[Sc]]]
   }
 
   implicit def TableOpsConv[C: {SimpleTableMacros.Mask as f}](
       t: SimpleTable[C]
-  )(using dialect: Dialect): TableOps[f.Result] =
+  )(using dialect: Dialect): TableOps[f.Base] =
     // assume types in f.Result matches
-    val tableMetadata = t.metadata.metadata0.asInstanceOf[Table.Metadata[f.Result]]
-    dialect.TableOpsConv(new Table[f.Result](using t.name0, tableMetadata) {
+    val tableMetadata = t.metadata.metadataBase.asInstanceOf[Table.Metadata[f.Base]]
+    dialect.TableOpsConv(new Table[f.Base](using t.name0, tableMetadata) {
       override protected[scalasql] def tableName: String = t.tableName
 
       override protected[scalasql] def schemaName: String = t.schemaName
@@ -166,18 +172,30 @@ object SimpleTable {
     }
   }
   class Metadata[C](val f: SimpleTableMacros.Mask[C])(
-      val metadata0: Table.Metadata[f.Result]
+      val metadata0: Table.Metadata[f.Convert],
+      val metadataBase: Table.Metadata[f.Base]
   ):
     def rowExpr(
         mappers: DialectTypeMappers
-    ): Queryable.Row[f.Result[Expr], C] =
+    ): Queryable.Row[f.Convert[Expr], C] =
       metadata0
         .queryable(
           metadata0.walkLabels0,
           mappers,
           new Table.Metadata.QueryableProxy(metadata0.queryables(mappers, _))
         )
-        .asInstanceOf[Queryable.Row[f.Result[Expr], C]]
+        .asInstanceOf[Queryable.Row[f.Convert[Expr], C]]
+
+    def rowExprBase(
+        mappers: DialectTypeMappers
+    ): Queryable.Row[f.Base[Expr], f.Base[Sc]] =
+      metadataBase
+        .queryable(
+          metadataBase.walkLabels0,
+          mappers,
+          new Table.Metadata.QueryableProxy(metadataBase.queryables(mappers, _))
+        )
+        .asInstanceOf[Queryable.Row[f.Base[Expr], f.Base[Sc]]]
 
   object Metadata extends SimpleTableMacros
 }
