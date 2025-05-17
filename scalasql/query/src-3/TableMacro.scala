@@ -3,6 +3,7 @@ package scalasql.query
 import scalasql.core.{DialectTypeMappers, Expr => SqlExpr, Queryable, Sc, TypeMapper}
 import scala.compiletime.summonInline
 import scala.quoted.*
+import javax.swing.event.TableModelListener
 
 object TableMacros {
   def applyImpl[V[_[_]] <: Product](using Quotes, Type[V]): Expr[Table.Metadata[V]] = {
@@ -84,9 +85,9 @@ object TableMacros {
       (
           walkLabels0: () => Seq[String],
           dialect: DialectTypeMappers,
-          queryable: Table.Metadata.QueryableProxy
+          queryable: TableLike.Metadata.QueryableProxy
       ) =>
-        new Table.Internal.TableQueryable(
+        new TableLike.Internal.TableQueryable(
           walkLabels0,
           (table: V[SqlExpr]) =>
             ${
@@ -124,7 +125,11 @@ object TableMacros {
     }
 
     val vExpr0 = '{
-      (tableRef: TableRef, dialect: DialectTypeMappers, queryable: Table.Metadata.QueryableProxy) =>
+      (
+          tableRef: TableRef,
+          dialect: DialectTypeMappers,
+          queryable: TableLike.Metadata.QueryableProxy
+      ) =>
         {
           import dialect.*
 

@@ -7,15 +7,16 @@ import scalasql.core.SqlStr.SqlStringSyntax
 /**
  * Models a SQL `FROM` clause
  */
-class TableRef(val value: Table.Base) extends From {
-  override def toString = s"TableRef(${Table.name(value)})"
+class TableRef(val value: TableLike.Base) extends From {
+  override def toString = s"TableRef(${TableLike.name(value)})"
 
-  def fromRefPrefix(prevContext: Context) = prevContext.config.tableNameMapper(Table.name(value))
+  def fromRefPrefix(prevContext: Context) =
+    prevContext.config.tableNameMapper(TableLike.name(value))
 
   def fromExprAliases(prevContext: Context): Seq[(Expr.Identity, SqlStr)] = Nil
 
   def renderSql(name: SqlStr, prevContext: Context, liveExprs: LiveExprs) = {
-    val resolvedTable = Table.fullIdentifier(value)(prevContext)
+    val resolvedTable = TableLike.fullIdentifier(value)(prevContext)
     SqlStr.raw(resolvedTable + sql" " + name)
   }
 }

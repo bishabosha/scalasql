@@ -8,6 +8,7 @@ import scalasql.core.Queryable
 import scalasql.query.Column
 import scalasql.core.Sc
 import scalasql.core.Expr
+import scalasql.query.TableLike
 
 class SimpleTable[C]()(
     using name: sourcecode.Name,
@@ -163,7 +164,7 @@ object SimpleTable {
         .queryable(
           metadata0.walkLabels0,
           mappers,
-          new Table.Metadata.QueryableProxy(metadata0.queryables(mappers, _))
+          new TableLike.Metadata.QueryableProxy(metadata0.queryables(mappers, _))
         )
         .asInstanceOf[Queryable.Row[Record[C, Expr], C]]
 

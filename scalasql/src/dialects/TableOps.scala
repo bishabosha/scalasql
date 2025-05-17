@@ -4,9 +4,10 @@ import scalasql.dialects.Dialect
 import scalasql.core.{Context, Expr}
 import scalasql.Sc
 import scalasql.query.{Column, Delete, Insert, Joinable, Select, SimpleSelect, Table, Update}
+import scalasql.query.TableLike
 
-class TableOps[V[_[_]]](val t: Table[V])(implicit dialect: Dialect)
-    extends Joinable[V[Expr], V[Sc]] {
+class TableOps[Expr0, Cols0, Row0](val t: TableLike[Expr0, Cols0, Row0])(implicit dialect: Dialect)
+    extends Joinable[Expr0, Row0] {
 
   import dialect.{dialectSelf => _}
 
@@ -15,12 +16,12 @@ class TableOps[V[_[_]]](val t: Table[V])(implicit dialect: Dialect)
     (ref, Table.metadata(t).vExpr(ref, dialect))
   }
 
-  protected def joinableToFromExpr: (Context.From, V[Expr]) = {
+  protected def joinableToFromExpr: (Context.From, Expr0) = {
     val (ref, expr) = toFromExpr0
-    (ref, expr.asInstanceOf[V[Expr]])
+    (ref, expr.asInstanceOf[Expr0])
   }
 
-  protected def joinableToSelect: Select[V[Expr], V[Sc]] = {
+  protected def joinableToSelect: Select[Expr0, Row0] = {
     val (ref, expr) = joinableToFromExpr
     new SimpleSelect(expr, None, None, false, Seq(ref), Nil, Nil, None)(
       t.containerQr,
@@ -37,7 +38,7 @@ class TableOps[V[_[_]]](val t: Table[V])(implicit dialect: Dialect)
    * Constructs a `UPDATE` query with the given [[filter]] to select the
    * rows you want to delete
    */
-  def update(filter: V[Column] => Expr[Boolean]): Update[V[Column], V[Sc]] = {
+  def update(filter: Cols0 => Expr[Boolean]): Update[Cols0, Row0] = {
     val (ref, expr) = toFromExpr0
     new Update.Impl(expr, ref, Nil, Nil, Seq(filter(Table.metadata(t).vExpr(ref, dialect))))(
       t.containerQr2,

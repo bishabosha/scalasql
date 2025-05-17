@@ -7,8 +7,52 @@ import scalasql.core.Context
  * In-code representation of a SQL table, associated with a given `case class` [[V]].
  */
 abstract class Table[V[_[_]]]()(implicit name: sourcecode.Name, metadata0: Table.Metadata[V])
-    extends Table.Base
-    with Table.LowPri[V] {
+    extends TableLike[V[Expr], V[Column], V[Sc]]
+    with TableLike.LowPri[V[Expr], V[Column], V[Sc]] {
+
+  override protected def tableMetadata: Table.Metadata[V] = metadata0
+
+  implicit def tableImplicitMetadata: Table.ImplicitMetadata[V] =
+    new Table.ImplicitMetadata(metadata0)
+}
+
+object Table {
+  def metadata[V[_[_]]](t: Table[V]): Table.Metadata[V] = t.tableMetadata
+  def ref[V[_[_]]](t: Table[V]): TableRef = TableLike.ref(t)
+  def name(t: TableLike.Base): String = TableLike.name(t)
+  def labels(t: TableLike.Base): Seq[String] = TableLike.labels(t)
+  def columnNameOverride[V[_[_]]](t: TableLike.Base)(s: String): String =
+    TableLike.columnNameOverride(t)(s)
+  def identifier(t: TableLike.Base)(implicit context: Context): String = TableLike.identifier(t)
+  def fullIdentifier(
+      t: TableLike.Base
+  )(implicit context: Context): String = TableLike.fullIdentifier(t)
+
+  val Internal: TableLike.Internal.type = TableLike.Internal
+
+  case class ImplicitMetadata[V[_[_]]](value: Metadata[V])
+  class Metadata[V[_[_]]](
+      queryables: (DialectTypeMappers, Int) => Queryable.Row[?, ?],
+      walkLabels0: () => Seq[String],
+      queryable: (
+          () => Seq[String],
+          DialectTypeMappers,
+          TableLike.Metadata.QueryableProxy
+      ) => Queryable[V[Expr], V[Sc]],
+      vExpr0: (TableRef, DialectTypeMappers, TableLike.Metadata.QueryableProxy) => V[Column]
+  ) extends TableLike.Metadata[V[Expr], V[Column], V[Sc]](
+        queryables,
+        walkLabels0,
+        queryable,
+        vExpr0
+      )
+}
+
+abstract class TableLike[Expr0, Cols0, Row0]()(
+    implicit name: sourcecode.Name,
+    metadata0: TableLike.Metadata[Expr0, Cols0, Row0]
+) extends TableLike.Base
+    with TableLike.LowPri[Expr0, Cols0, Row0] {
 
   protected[scalasql] def tableName = name.value
 
@@ -16,43 +60,44 @@ abstract class Table[V[_[_]]]()(implicit name: sourcecode.Name, metadata0: Table
 
   protected[scalasql] def escape: Boolean = false
 
-  protected implicit def tableSelf: Table[V] = this
+  protected implicit def tableSelf: TableLike[Expr0, Cols0, Row0] = this
 
-  protected def tableMetadata: Table.Metadata[V] = metadata0
+  protected def tableMetadata: TableLike.Metadata[Expr0, Cols0, Row0] = metadata0
 
-  implicit def containerQr(implicit dialect: DialectTypeMappers): Queryable.Row[V[Expr], V[Sc]] =
+  implicit def containerQr(implicit dialect: DialectTypeMappers): Queryable.Row[Expr0, Row0] =
     tableMetadata
       .queryable(
         tableMetadata.walkLabels0,
         dialect,
-        new Table.Metadata.QueryableProxy(tableMetadata.queryables(dialect, _))
+        new TableLike.Metadata.QueryableProxy(tableMetadata.queryables(dialect, _))
       )
-      .asInstanceOf[Queryable.Row[V[Expr], V[Sc]]]
+      .asInstanceOf[Queryable.Row[Expr0, Row0]]
 
   protected def tableRef = new TableRef(this)
   protected[scalasql] def tableLabels: Seq[String] = {
     tableMetadata.walkLabels0()
   }
-  implicit def tableImplicitMetadata: Table.ImplicitMetadata[V] =
-    Table.ImplicitMetadata(tableMetadata)
 }
 
-object Table {
-  trait LowPri[V[_[_]]] { this: Table[V] =>
+trait TableLikeCompanion {}
+
+object TableLike {
+  trait LowPri[Expr0, Cols0, Row0] { this: TableLike[Expr0, Cols0, Row0] =>
     implicit def containerQr2(
         implicit dialect: DialectTypeMappers
-    ): Queryable.Row[V[Column], V[Sc]] =
-      containerQr.asInstanceOf[Queryable.Row[V[Column], V[Sc]]]
+    ): Queryable.Row[Cols0, Row0] =
+      containerQr.asInstanceOf[Queryable.Row[Cols0, Row0]]
   }
 
-  case class ImplicitMetadata[V[_[_]]](value: Metadata[V])
-
-  def metadata[V[_[_]]](t: Table[V]) = t.tableMetadata
-  def ref[V[_[_]]](t: Table[V]) = t.tableRef
-  def name(t: Table.Base) = t.tableName
-  def labels(t: Table.Base) = t.tableLabels
-  def columnNameOverride[V[_[_]]](t: Table.Base)(s: String) = t.tableColumnNameOverride(s)
-  def identifier(t: Table.Base)(implicit context: Context): String = {
+  def metadata[Expr0, Cols0, Row0](
+      t: TableLike[Expr0, Cols0, Row0]
+  ): TableLike.Metadata[Expr0, Cols0, Row0] = t.tableMetadata
+  def ref[Expr0, Cols0, Row0](t: TableLike[Expr0, Cols0, Row0]): TableRef = t.tableRef
+  def name(t: TableLike.Base): String = t.tableName
+  def labels(t: TableLike.Base): Seq[String] = t.tableLabels
+  def columnNameOverride[Expr0, Cols0, Row0](t: TableLike.Base)(s: String): String =
+    t.tableColumnNameOverride(s)
+  def identifier(t: TableLike.Base)(implicit context: Context): String = {
     context.config.tableNameMapper.andThen { str =>
       if (t.escape) {
         context.dialectConfig.escape(str)
@@ -62,7 +107,7 @@ object Table {
     }(t.tableName)
   }
   def fullIdentifier(
-      t: Table.Base
+      t: TableLike.Base
   )(implicit context: Context): String = {
     t.schemaName match {
       case "" => identifier(t)
@@ -88,15 +133,15 @@ object Table {
     protected[scalasql] def tableColumnNameOverride(s: String): String = identity(s)
   }
 
-  class Metadata[V[_[_]]](
+  class Metadata[Expr0, Cols0, Row0](
       val queryables: (DialectTypeMappers, Int) => Queryable.Row[?, ?],
       val walkLabels0: () => Seq[String],
       val queryable: (
           () => Seq[String],
           DialectTypeMappers,
           Metadata.QueryableProxy
-      ) => Queryable[V[Expr], V[Sc]],
-      val vExpr0: (TableRef, DialectTypeMappers, Metadata.QueryableProxy) => V[Column]
+      ) => Queryable[Expr0, Row0],
+      val vExpr0: (TableRef, DialectTypeMappers, Metadata.QueryableProxy) => Cols0
   ) {
     def vExpr(t: TableRef, d: DialectTypeMappers) =
       vExpr0(t, d, new Metadata.QueryableProxy(queryables(d, _)))

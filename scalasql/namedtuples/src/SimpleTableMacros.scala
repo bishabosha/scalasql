@@ -15,6 +15,7 @@ import java.util.function.UnaryOperator
 import scala.annotation.nowarn
 import scalasql.namedtuples.SimpleTableMacros.BaseLabels
 import scalasql.core.TypeMapper
+import scalasql.query.TableLike
 
 object SimpleTableMacros {
   def asIArray[T: ClassTag](t: Tuple): IArray[T] = {
@@ -121,7 +122,7 @@ object SimpleTableMacros {
   }
 
   def walkAllExprs(
-      queryable: Table.Metadata.QueryableProxy
+      queryable: TableLike.Metadata.QueryableProxy
   )(e: SimpleTable.Record[?, ?]): IndexedSeq[Expr[?]] = {
     var i = 0
     val fields = e.recordIterator
@@ -137,7 +138,7 @@ object SimpleTableMacros {
   }
 
   def construct[C](
-      queryable: Table.Metadata.QueryableProxy
+      queryable: TableLike.Metadata.QueryableProxy
   )(size: Int, args: Queryable.ResultSetIterator, factory: IArray[AnyRef] => C): C = {
     var i = 0
     val buf = IArray.newBuilder[AnyRef]
@@ -151,7 +152,7 @@ object SimpleTableMacros {
   }
 
   def deconstruct[R <: SimpleTable.Record[?, ?]](
-      queryable: Table.Metadata.QueryableProxy
+      queryable: TableLike.Metadata.QueryableProxy
   )(c: Product): R = {
     var i = 0
     val buf = IArray.newBuilder[AnyRef]
@@ -212,7 +213,7 @@ trait SimpleTableMacros {
     def queryable(
         walkLabels0: () => Seq[String],
         @nowarn("msg=unused") mappers: DialectTypeMappers,
-        queryable: Table.Metadata.QueryableProxy
+        queryable: TableLike.Metadata.QueryableProxy
     ): Queryable[Impl[Expr], Impl[Sc]] = Table.Internal.TableQueryable(
       walkLabels0,
       walkExprs0 = SimpleTableMacros.walkAllExprs(queryable),
@@ -230,7 +231,7 @@ trait SimpleTableMacros {
     def vExpr0(
         tableRef: TableRef,
         mappers: DialectTypeMappers,
-        @nowarn("msg=unused") queryable: Table.Metadata.QueryableProxy
+        @nowarn("msg=unused") queryable: TableLike.Metadata.QueryableProxy
     ): Impl[Column] =
       // TODO: we should not cache the columns here because this can be called multiple times,
       //       and each time the captured tableRef should be treated as a fresh value.
