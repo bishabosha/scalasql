@@ -5,53 +5,63 @@ import scalasql.core.{DialectTypeMappers, Queryable, Expr, WithSqlExpr}
 /**
  * A SQL `INSERT` query
  */
-trait Insert[V[_[_]], R] extends WithSqlExpr[V[Column]] with scalasql.generated.Insert[V, R] {
+trait Insert[VExpr, VCol <: VExpr, VSc, R]
+    extends WithSqlExpr[VCol]
+    with scalasql.generated.Insert[VExpr, VCol, VSc, R] {
   def table: TableRef
-  def qr: Queryable[V[Column], R]
-  def select[C, R2](columns: V[Expr] => C, select: Select[C, R2]): InsertSelect[V, C, R, R2]
+  def qr: Queryable[VCol, R]
+  def select[C, R2](
+      columns: VExpr => C,
+      select: Select[C, R2]
+  ): InsertSelect[VExpr, VCol, VSc, C, R, R2]
 
-  def columns(f: (V[Column] => Column.Assignment[?])*): InsertColumns[V, R]
-  def values(f: R*): InsertValues[V, R]
+  def columns(f: (VCol => Column.Assignment[?])*): InsertColumns[VExpr, VCol, VSc, R]
+  def values(f: R*): InsertValues[VExpr, VCol, VSc, R]
 
-  def batched[T1](f1: V[Column] => Column[T1])(items: Expr[T1]*): InsertColumns[V, R]
+  def batched[T1](f1: VCol => Column[T1])(items: Expr[T1]*): InsertColumns[VExpr, VCol, VSc, R]
 
 }
 
 object Insert {
-  class Impl[V[_[_]], R](val expr: V[Column], val table: TableRef)(
-      implicit val qr: Queryable.Row[V[Column], R],
+  class Impl[VExpr, VCol <: VExpr, VSc, R](val expr: VCol, val table: TableRef)(
+      implicit val qr: Queryable.Row[VCol, R],
       dialect: DialectTypeMappers
-  ) extends Insert[V, R]
-      with scalasql.generated.InsertImpl[V, R] {
+  ) extends Insert[VExpr, VCol, VSc, R]
+      with scalasql.generated.InsertImpl[VExpr, VCol, VSc, R] {
 
     def newInsertSelect[C, R, R2](
-        insert: Insert[V, R],
+        insert: Insert[VExpr, VCol, VSc, R],
         columns: C,
         select: Select[C, R2]
-    ): InsertSelect[V, C, R, R2] = { new InsertSelect.Impl(insert, columns, select) }
+    ): InsertSelect[VExpr, VCol, VSc, C, R, R2] = { new InsertSelect.Impl(insert, columns, select) }
 
     def newInsertValues[R](
-        insert: Insert[V, R],
+        insert: Insert[VExpr, VCol, VSc, R],
         columns: Seq[Column[?]],
         valuesLists: Seq[Seq[Expr[?]]]
-    )(implicit qr: Queryable[V[Column], R]): InsertColumns[V, R] = {
+    )(implicit qr: Queryable[VCol, R]): InsertColumns[VExpr, VCol, VSc, R] = {
       new InsertColumns.Impl(insert, columns, valuesLists)
     }
 
-    def select[C, R2](columns: V[Expr] => C, select: Select[C, R2]): InsertSelect[V, C, R, R2] = {
-      newInsertSelect(this, columns(expr.asInstanceOf[V[Expr]]), select)
+    def select[C, R2](
+        columns: VExpr => C,
+        select: Select[C, R2]
+    ): InsertSelect[VExpr, VCol, VSc, C, R, R2] = {
+      newInsertSelect(this, columns(expr.asInstanceOf[VExpr]), select)
     }
 
-    def columns(f: (V[Column] => Column.Assignment[?])*): InsertColumns[V, R] = {
+    def columns(f: (VCol => Column.Assignment[?])*): InsertColumns[VExpr, VCol, VSc, R] = {
       val kvs = f.map(_(expr))
       newInsertValues(this, columns = kvs.map(_.column), valuesLists = Seq(kvs.map(_.value)))
     }
 
-    def batched[T1](f1: V[Column] => Column[T1])(items: Expr[T1]*): InsertColumns[V, R] = {
+    def batched[T1](
+        f1: VCol => Column[T1]
+    )(items: Expr[T1]*): InsertColumns[VExpr, VCol, VSc, R] = {
       newInsertValues(this, columns = Seq(f1(expr)), valuesLists = items.map(Seq(_)))
     }
 
-    override def values(values: R*): InsertValues[V, R] =
+    override def values(values: R*): InsertValues[VExpr, VCol, VSc, R] =
       new InsertValues.Impl(this, values, dialect, qr, Nil)
   }
 }
