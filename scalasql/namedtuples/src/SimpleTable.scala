@@ -10,6 +10,7 @@ import scalasql.core.Sc
 import scalasql.core.Expr
 
 import scala.compiletime.asMatchable
+import scala.annotation.unused
 
 /**
  * In-code representation of a SQL table, associated with a given `case class` `C`.
@@ -22,22 +23,32 @@ import scala.compiletime.asMatchable
  * Consequently a [[package.SimpleTable.Record Record]] is used in queries
  * rather than `C` itself.
  */
-class SimpleTable[C](
-    using name: sourcecode.Name,
-    metadata0: Table.Metadata[[T[_]] =>> SimpleTable.MapOver[C, T]]
-) extends Table[[T[_]] =>> SimpleTable.MapOver[C, T]](using name, metadata0) {
-  given simpleTableGivenMetadata: SimpleTable.GivenMetadata[C] =
-    SimpleTable.GivenMetadata(metadata0)
+class SimpleTable[C, Tables](tableOf: SimpleTable.TableOf[C, Tables])(
+    using name: sourcecode.Name
+) extends Table[[T[_]] =>> SimpleTable.MapOver[C, T, Tables]](using name, tableOf.metadata0) {
+
+  given theQueryable: [OuterTables]
+    => DialectTypeMappers
+    => Queryable.Row[SimpleTable.Record[C, Expr, OuterTables], C] =
+    containerQr.asInstanceOf[Queryable.Row[SimpleTable.Record[C, Expr, OuterTables], C]]
+
+  given theQueryable2: [OuterTables] => DialectTypeMappers
+    => Queryable.Row[SimpleTable.Record[C, Column, OuterTables], C] =
+    containerQr2.asInstanceOf[Queryable.Row[SimpleTable.Record[C, Column, OuterTables], C]]
+
+  given simpleTableGivenMetadata: SimpleTable.GivenMetadata[C, Tables] =
+    SimpleTable.GivenMetadata(tableOf.metadata0)
 }
 
 object SimpleTable {
 
-  /**
-   * Marker class that signals that a data type is convertable to an SQL table row.
-   * @note this must be a class to convince the match type reducer that it provably can't be mixed
-   *  into various column types such as `java.util.Date`, `geny.Bytes`, or `scala.Option`.
-   */
-  abstract class Nested
+  final class TableOf[C, Tables](
+      val metadata0: Table.Metadata[[T[_]] =>> SimpleTable.MapOver[C, T, Tables]]
+  )
+  inline def of[C]()[Tables](using @unused inline ev: SimpleTableMacros.IsTableEvs.Of[C, Tables])(
+      using metadata0: Table.Metadata[[T[_]] =>> SimpleTable.MapOver[C, T, Tables]]
+  ): TableOf[C, Tables] =
+    new TableOf[C, Tables](metadata0)
 
   /**
    * A type that can map `T` over the fields of `C`. If `T` is the identity then `C` itself,
@@ -46,9 +57,9 @@ object SimpleTable {
    * @tparam C the case class type
    * @tparam T the type constructor to map over the fields of `C`.
    */
-  type MapOver[C, T[_]] = T[Internal.Tombstone.type] match {
+  type MapOver[C, T[_], Tables] = T[Internal.Tombstone.type] match {
     case Internal.Tombstone.type => C // T is `Sc`
-    case _ => Record[C, T]
+    case _ => Record[C, T, Tables]
   }
 
   /** Super type of all [[SimpleTable.Record Record]]. */
@@ -60,7 +71,9 @@ object SimpleTable {
    *
    * @see [[Record#Fields Fields]] for how the fields are mapped.
    */
-  final class Record[C, T[_]](private val data: IArray[AnyRef]) extends AnyRecord with Selectable:
+  final class Record[C, T[_], Tables](private val data: IArray[AnyRef])
+      extends AnyRecord
+      with Selectable:
 
     /**
      * For each field `x: X` of class `C` there exists a field `x` in this record of type
@@ -69,18 +82,18 @@ object SimpleTable {
     type Fields = NamedTuple.Map[
       NamedTuple.From[C],
       [X] =>> X match {
-        case Nested => Record[X, T]
+        case Tables => Record[X, T, Tables]
         case _ => T[X]
       }
     ]
     def apply(i: Int): AnyRef = data(i)
-    def canEqual(that: Any): Boolean = that.isInstanceOf[Record[?, ?]]
+    def canEqual(that: Any): Boolean = that.isInstanceOf[Record[?, ?, ?]]
     override def productPrefix: String = "Record"
     def productArity: Int = data.length
     def productElement(i: Int): AnyRef = data(i)
     override def equals(that: Any): Boolean = that.asMatchable match
       case _: this.type => true
-      case r: Record[?, ?] =>
+      case r: Record[?, ?, ?] =>
         r.canEqual(this) && IArray.equals(data, r.data)
       case _ => false
 
@@ -98,8 +111,8 @@ object SimpleTable {
      *   in this record.
      * @return a new record (of the same type) with the patches applied.
      */
-    def updates(fs: (RecordUpdater[C, T] => Patch)*): Record[C, T] =
-      val u = recordUpdater[C, T]
+    def updates(fs: (RecordUpdater[C, T, Tables] => Patch)*): Record[C, T, Tables] =
+      val u = recordUpdater[C, T, Tables]
       val arr = IArray.genericWrapArray(data).toArray
       fs.foreach: f =>
         val patch = f(u)
@@ -110,9 +123,9 @@ object SimpleTable {
     inline def selectDynamic(name: String): AnyRef =
       apply(compiletime.constValue[Record.IndexOf[name.type, Record.Names[C], 0]])
 
-  private object RecordUpdaterImpl extends RecordUpdater[Any, [T] =>> Any]
-  def recordUpdater[C, T[_]]: RecordUpdater[C, T] =
-    RecordUpdaterImpl.asInstanceOf[RecordUpdater[C, T]]
+  private object RecordUpdaterImpl extends RecordUpdater[Any, [T] =>> Any, Any]
+  def recordUpdater[C, T[_], Tables]: RecordUpdater[C, T, Tables] =
+    RecordUpdaterImpl.asInstanceOf[RecordUpdater[C, T, Tables]]
 
   /** A single update to a field of a `Record[C, T]`, used by [[Record#updates]] */
   final class Patch private[SimpleTable] (
@@ -149,7 +162,7 @@ object SimpleTable {
    * @see [[Record#updates updates]] for how to apply the patches.
    * @see [[RecordUpdater#Fields Fields]] for how the fields are mapped.
    */
-  sealed trait RecordUpdater[C, T[_]] extends Selectable:
+  sealed trait RecordUpdater[C, T[_], Tables] extends Selectable:
 
     /**
      * For each field `x: X` of class `C`
@@ -159,7 +172,7 @@ object SimpleTable {
     type Fields = NamedTuple.Map[
       NamedTuple.From[C],
       [X] =>> X match {
-        case Nested => Field[Record[X, T]]
+        case Tables => Field[Record[X, T, Tables]]
         case _ => Field[T[X]]
       }
     ]
@@ -193,12 +206,13 @@ object SimpleTable {
   }
 
   /** A type that gives access to the Table metadata of `C`. */
-  opaque type GivenMetadata[C] = GivenMetadata.Inner[C]
+  opaque type AnyTableMetadata[C] = Any
+  opaque type GivenMetadata[C, Tables] <: AnyTableMetadata[C] = GivenMetadata.Inner[C, Tables]
   object GivenMetadata {
-    type Inner[C] = Table.Metadata[[T[_]] =>> SimpleTable.MapOver[C, T]]
-    def apply[C](metadata: Inner[C]): GivenMetadata[C] = metadata
-    extension [C](m: GivenMetadata[C]) {
-      def metadata: Inner[C] = m
+    type Inner[C, Tables] = Table.Metadata[[T[_]] =>> SimpleTable.MapOver[C, T, Tables]]
+    def apply[C, Tables](metadata: Inner[C, Tables]): GivenMetadata[C, Tables] = metadata
+    extension [C, Tables](m: GivenMetadata[C, Tables]) {
+      def metadata: Inner[C, Tables] = m
     }
   }
 

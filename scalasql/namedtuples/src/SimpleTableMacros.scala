@@ -68,18 +68,64 @@ object SimpleTableMacros {
             compiletime.summonInline[T]
   }
 
+  opaque type IsTableEv[T, +Out <: Option[T]] = Unit
+  object IsTableEv {
+    given summonDelegate[T, Tables](
+        using @unused m: SimpleTable.GivenMetadata[T, Tables]
+    ): IsTableEv[T, Some[T]] = ()
+
+    given summonBasic: [T]
+      => (@unused ev: scala.util.NotGiven[SimpleTable.AnyTableMetadata[T]])
+      => IsTableEv[T, None.type] = ()
+  }
+
+  /** A sequence of n `Queryable.Row[Q, R]` instances, where `X` corresponds to all the `Q` and `Y` to all the `R` */
+  opaque type IsTableEvs[X <: Tuple, +Y] = Unit
+
+  object IsTableEvs {
+    type Of[C, +Tables] = IsTableEvs[NamedTuple.DropNames[NamedTuple.From[C]], Tables]
+
+    case object Empty
+    type Empty = IsTableEvs.Empty.type
+    type Combine[R, T <: Option[Any]] = T match {
+      case Some[t] =>
+        R match
+          case Empty => t
+          case _ => R | t
+      case _ => R
+    }
+    type CombineAny[R, T] = T match {
+      case Empty => R
+      case _ => Combine[R, Some[T]]
+    }
+
+    type FieldsOf[C] = NamedTuple.DropNames[NamedTuple.From[C]]
+
+    given concatRows: [Q, Nested, Qs <: Tuple, Rs]
+      => (x: IsTableEv[Q, Some[Q]])
+      => (nested: IsTableEvs[FieldsOf[Q], Nested])
+      => (xs: IsTableEvs[Qs, Rs])
+      => IsTableEvs[Q *: Qs, CombineAny[Combine[Rs, Some[Q]], Nested]] = ()
+
+    given concatRowsNope: [Q, Qs <: Tuple, Rs]
+      => (x: IsTableEv[Q, None.type])
+      => (xs: IsTableEvs[Qs, Rs])
+      => IsTableEvs[Q *: Qs, Rs] = ()
+
+    given emptyRows: IsTableEvs[EmptyTuple, IsTableEvs.Empty] = ()
+  }
+
   opaque type BaseRowExpr[T] = Queryable.Row[?, ?]
   object BaseRowExpr {
-    given summonDelegate[T](
-        using @unused m: SimpleTable.GivenMetadata[T],
-        @unused e: T <:< SimpleTable.Nested
+    given summonDelegate[T, Tables](
+        using @unused m: SimpleTable.GivenMetadata[T, Tables]
     )(
         using delegate: Queryable.Row[
-          SimpleTable.MapOver[T, Expr],
-          SimpleTable.MapOver[T, Sc]
+          SimpleTable.MapOver[T, Expr, Tables],
+          SimpleTable.MapOver[T, Sc, Tables]
         ]
     ): BaseRowExpr[T] = delegate
-    given summonBasic[T](using @unused ev: scala.util.NotGiven[SimpleTable.GivenMetadata[T]])(
+    given summonBasic[T](using @unused ev: scala.util.NotGiven[SimpleTable.AnyTableMetadata[T]])(
         using delegate: Queryable.Row[Expr[T], Sc[T]]
     ): BaseRowExpr[T] = delegate
   }
@@ -96,8 +142,8 @@ object SimpleTableMacros {
       col
   }
   object BaseColumn extends BaseColumnLowPrio {
-    given foundMeta: [L <: String, T]
-      => (mappers: DialectTypeMappers, ref: TableRef, m: SimpleTable.GivenMetadata[T])
+    given foundMeta: [L <: String, T, Tables]
+      => (mappers: DialectTypeMappers, ref: TableRef, m: SimpleTable.GivenMetadata[T, Tables])
       => BaseColumn[L, T] =
       m.metadata.vExpr(ref, mappers).asInstanceOf[AnyRef]
   }
@@ -108,7 +154,8 @@ object SimpleTableMacros {
       label => Seq(label)
   }
   object BaseLabels extends BaseLabelsLowPrio {
-    given foundMeta: [L, C] => (m: SimpleTable.GivenMetadata[C]) => BaseLabels[L, C] =
+    given foundMeta
+        : [L, C, Tables] => (m: SimpleTable.GivenMetadata[C, Tables]) => BaseLabels[L, C] =
       _ => m.metadata.walkLabels0()
   }
 
@@ -126,7 +173,7 @@ object SimpleTableMacros {
 
   def walkAllExprs(
       queryable: Table.Metadata.QueryableProxy
-  )(e: SimpleTable.Record[?, ?]): IndexedSeq[Expr[?]] = {
+  )(e: SimpleTable.Record[?, ?, ?]): IndexedSeq[Expr[?]] = {
     var i = 0
     val fields = e.productIterator
     val buf = IndexedSeq.newBuilder[Seq[Expr[?]]]
@@ -154,7 +201,7 @@ object SimpleTableMacros {
     factory(buf.result())
   }
 
-  def deconstruct[R <: SimpleTable.Record[?, ?]](
+  def deconstruct[R <: SimpleTable.Record[?, ?, ?]](
       queryable: Table.Metadata.QueryableProxy
   )(c: Product): R = {
     var i = 0
@@ -202,9 +249,9 @@ trait SimpleTableMacros {
     lazy val labelsRef: IndexedSeq[String] =
       SimpleTableMacros.unwrapLabels(labelsRef0, labels)
 
-  inline given initTableMetadata[C <: Product]
-      : Table.Metadata[[T[_]] =>> SimpleTable.MapOver[C, T]] =
-    type Impl[T[_]] = SimpleTable.MapOver[C, T]
+  inline given initTableMetadata[C <: Product, Tables]
+      : Table.Metadata[[T[_]] =>> SimpleTable.MapOver[C, T, Tables]] =
+    type Impl[T[_]] = SimpleTable.MapOver[C, T, Tables]
     type Labels = NamedTuple.Names[NamedTuple.From[C]]
     type Values = NamedTuple.DropNames[NamedTuple.From[C]]
     type Pairs[F[_, _]] = Tuple.Map[
